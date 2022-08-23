@@ -16,6 +16,7 @@
 #include "dirent.h"
 #include "errno.h"
 #include "libgen.h"
+#include "stdbool.h"
 
 #define MAX_COMPILERFLAGS 100
 #define MAX_LINKERFLAGS 100
@@ -49,12 +50,14 @@ int getFilelines(FILE *file,char* lines[], char* fileBuffer ){
    }
    return lineCount;
 } 
-void print_array (char **strings, size_t nptrs)
+void printArray (char **strings, size_t nptrs)
 {
     for (size_t i = 0; i < nptrs; i++)
         printf("%s ", strings[i]);
     putchar ('\n');
 }
+
+volatile bool build_failed = false;
 
 int main(){
    FILE *pCompilerFlagsFile,
@@ -85,6 +88,9 @@ int main(){
    int nLinkerFlags  = getFilelines(pLinkerFlagsFile,linkerFlags,linkerFlagsBuffer);
    int nSourceFiles = getFilelines(pSourceListFile,sourcelist,sourcelistBuffer);
    int nLibraryFiles = getFilelines(pLibraryListFile,librarylist,librarylistBuffer);
+   fclose(pCompilerFlagsFile);
+   fclose(pLinkerFlagsFile);
+   fclose(pSourceListFile);
 
    /* create compiler args */
    char *args[MAX_COMPILER_ARGS]={COMPILER,NULL};
@@ -97,6 +103,9 @@ int main(){
    char outname[128][MAX_SOURCEFILES]={{0},{0}},
    dasho[3]="-o", 
    outfolder[128]="build/obj/";
+
+   pid_t pid[nSourceFiles];
+
    for(i=0; i < nSourceFiles; i++ ){
       /* get name of the output file */
       memcpy(outname[i],outfolder,10);
@@ -119,6 +128,7 @@ int main(){
             printf("error creating folder: %s",outfolder);
             exit(EXIT_FAILURE);
          }
+
       } else {
          printf("error creating folder: %s",outfolder);
          exit(EXIT_FAILURE);
@@ -133,22 +143,33 @@ int main(){
       args[j]=outname[i];
       j++;
       {
-         pid_t forkrank;
-         forkrank=fork();
-         if(forkrank == 0 ){
+         pid[i]=fork();
+         if(pid[i] == 0 ){
             //printf("child process is executing\n");
-            exit(execvp(args[0],args));
+            /* Dont care about allocs on the child process */
+            execvp(args[0],args);
+            exit(EXIT_FAILURE);
 
-         }else if(forkrank != -1){
-            print_array(args,j);
+         }else if(pid[i] != -1){
+            printArray(args,j);
             //printf("parent ran the loop...\n");
          }else{
             perror("fork error\n");
+            exit(EXIT_FAILURE);
          }
       }
    }
    //printf("parent waiting...\n");
-   wait(NULL);
+   //wait(NULL); // actual waiting, happens here, we check the return values of the child pid's at loop below
+   int wstatus, return_value;
+   for(i=0; i < nSourceFiles; i++ ){
+      waitpid(pid[i], &wstatus, 0); // Store proc info into wstatus
+      return_value= WEXITSTATUS(wstatus); // Extract return value from wstatus
+      if (return_value != 0){
+         fprintf(stderr, "[ERROR] Building %s failed...\n",sourcelist[i]);
+         exit(EXIT_FAILURE);
+      }
+   }
 
    /*Compiling done, lets link*/
    /*create link command, copy the linking flags to args*/
@@ -172,13 +193,14 @@ int main(){
    }
    args[j]=NULL;
    /*exec the linking build command at new process*/
-   pid_t forkrank;
-   forkrank=fork();
-   if(forkrank == 0 ){
+   
+   pid[0]=fork(); //reuse pid
+   if(pid[0] == 0 ){
       //printf("child process is executing\n");
-      print_array(args,j);
-      exit(execvp(args[0],args));
-   }else if(forkrank != -1){
+      printArray(args,j);
+      execvp(args[0],args);
+      exit(EXIT_FAILURE);
+   }else if(pid[0] != -1){
       wait(NULL);
       //printf("parent waiting...\n");
    }else{
@@ -189,8 +211,6 @@ int main(){
    free(compilerFlagsBuffer);
    free(linkerFlagsBuffer);
    free(sourcelistBuffer);
-   fclose(pCompilerFlagsFile);
-   fclose(pLinkerFlagsFile);
-   fclose(pSourceListFile);
+
    return 0; 
 }
