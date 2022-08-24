@@ -32,7 +32,16 @@ Run these to setup and test xserver window
     xeyes
 if you see window with eyes, setup was successful. 
 
+Building the Program:
+You can just ctrl + shift + B to build in VSCode.
+it runs ./build.sh script
 
 
-OpenGL examples:
+Debugging:
+Just press F5 in VSCode. 
+
+cleanup:
+run ./clean.sh to cleanup.
+
+OpenGL example from here, not my work:
 https://cs.lmu.edu/~ray/notes/openglexample
