@@ -18,6 +18,10 @@
 #include "libgen.h"
 #include "stdbool.h"
 
+#define KNRM  "\x1B[0m"
+#define KRED  "\x1B[31m"
+#define KGRN  "\x1B[32m"
+
 #define MAX_COMPILERFLAGS 100
 #define MAX_LINKERFLAGS 100
 #define MAX_SOURCEFILES 100
@@ -56,8 +60,6 @@ void printArray (char **strings, size_t nptrs)
         printf("%s ", strings[i]);
     putchar ('\n');
 }
-
-volatile bool build_failed = false;
 
 int main(){
    FILE *pCompilerFlagsFile,
@@ -158,19 +160,25 @@ int main(){
             exit(EXIT_FAILURE);
          }
       }
-   }
+   } /* End of compile for-loop */
    //printf("parent waiting...\n");
-   //wait(NULL); // actual waiting, happens here, we check the return values of the child pid's at loop below
+   
+   
    int wstatus, return_value;
+   bool build_failed = false;
    for(i=0; i < nSourceFiles; i++ ){
       waitpid(pid[i], &wstatus, 0); // Store proc info into wstatus
       return_value= WEXITSTATUS(wstatus); // Extract return value from wstatus
       if (return_value != 0){
-         fprintf(stderr, "[ERROR] Building %s failed...\n",sourcelist[i]);
-         exit(EXIT_FAILURE);
+         build_failed = true;
+         fprintf(stderr, "%s[ERROR] Building %s failed...\n",KRED,sourcelist[i]);
       }
    }
-
+   
+   if (build_failed){
+      exit(EXIT_FAILURE);
+   }
+   
    /*Compiling done, lets link*/
    /*create link command, copy the linking flags to args*/
    j=1;
@@ -201,7 +209,14 @@ int main(){
       execvp(args[0],args);
       exit(EXIT_FAILURE);
    }else if(pid[0] != -1){
-      wait(NULL);
+      waitpid(pid[0], &wstatus, 0); // Store proc info into wstatus
+      return_value= WEXITSTATUS(wstatus); // Extract return value from wstatus
+      if (return_value == 0){
+         printf("%s[SUCCESS]%s Building %s was successful\n",KGRN,KNRM,EXECUTABLE_NAME);
+      }
+      else{
+         fprintf(stderr, "%s[ERROR] Building %s failed...\n",KRED,EXECUTABLE_NAME);
+      }
       //printf("parent waiting...\n");
    }else{
       perror("fork error\n");
